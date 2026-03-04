@@ -326,6 +326,39 @@ const togglePublishStatus = asyncHandler(async (req, res) => {
   const { videoId } = req.params;
 });
 
+const incrementVideoViews = asyncHandler(async (req, res) => {
+  const { videoId } = req.params;
+  
+  if (!isValidObjectId(videoId)) {
+    throw new ApiErrors(400, "Invalid video ID");
+  }
+
+  // Increment video views
+  const video = await Video.findByIdAndUpdate(
+    videoId,
+    { $inc: { views: 1 } },
+    { new: true }
+  );
+
+  if (!video) {
+    throw new ApiErrors(404, "Video not found");
+  }
+
+  // Add to user's watch history if user is logged in
+  if (req.user?._id) {
+    await User.findByIdAndUpdate(
+      req.user._id,
+      { 
+        $addToSet: { watch: videoId } // $addToSet prevents duplicates
+      }
+    );
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponses(200, { views: video.views }, "Video view counted"));
+});
+
 export {
   getAllVideos,
   publishAVideo,
@@ -333,4 +366,5 @@ export {
   updateVideo,
   deleteVideo,
   togglePublishStatus,
+  incrementVideoViews,
 };

@@ -4,20 +4,17 @@ import { ApiErrors } from "../utils/ApiErrors.js";
 import { ApiResponses } from "../utils/ApiResponses.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { Video } from "../models/videos.models.js";
-import { User } from "../models/users.models.js";
 
 const createPlaylist = asyncHandler(async (req, res) => {
   //TODO: create playlist
   const { name, description, videoIds } = req.body;
   if (!name || !description || !Array.isArray(videoIds)) {
-    res.status(400);
-    throw new ApiErrors("Invalid playlist data");
+    throw new ApiErrors(400, "Invalid playlist data");
   }
 
   const videos = await Video.find({ _id: { $in: videoIds } });
   if (videos.length !== videoIds.length) {
-    res.status(400);
-    throw new ApiErrors("Some videos not found");
+    throw new ApiErrors(400, "Some videos not found");
   }
 
   const playlist = await Playlist.create({
@@ -107,17 +104,96 @@ const getUserPlaylists = asyncHandler(async (req, res) => {
 const getPlaylistById = asyncHandler(async (req, res) => {
   const { playlistId } = req.params;
   //TODO: get playlist by id
-  if (!playlistId) {
-    throw new ApiErrors(404, "Playlist ID not found");
+  if (!playlistId || !isValidObjectId(playlistId)) {
+    throw new ApiErrors(404, "Invalid Playlist ID");
   }
-  const playlist = await Playlist.findById(playlistId);
+
+  const playlist = await Playlist.aggregate([
+    {
+      $match: {
+        _id: new mongoose.Types.ObjectId(playlistId),
+      },
+    },
+    {
+      $lookup: {
+        from: "videos",
+        localField: "allVideos",
+        foreignField: "_id",
+        as: "playlistVideos",
+        pipeline: [
+          {
+            $project: {
+              _id: 1,
+              thumbnail: 1,
+              title: 1,
+              description: 1,
+              views: 1,
+              owner: 1,
+              updatedAt: 1,
+            },
+          },
+        ],
+      },
+    },
+    {
+      $addFields: {
+        totalVideos: {
+          $size: "$playlistVideos",
+        },
+        totalViews: {
+          $sum: "$playlistVideos.views",
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: "users",
+        localField: "owner",
+        foreignField: "_id",
+        as: "owner",
+        pipeline: [
+          {
+            $project: {
+              fullName: 1,
+              username: 1,
+              avatar: 1,
+            },
+          },
+        ],
+      },
+    },
+    {
+      $addFields: {
+        owner: {
+          $first: "$owner",
+        },
+      },
+    },
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        playlistVideos: 1,
+        description: 1,
+        totalVideos: 1,
+        totalViews: 1,
+        owner: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    },
+  ]);
+
+  if (!playlist || playlist.length === 0) {
+    throw new ApiErrors(404, "Playlist not found");
+  }
 
   return res
     .status(200)
     .json(
       new ApiResponses(
-        201,
-        { playlist },
+        200,
+        { playlist: playlist[0] },
         `Playlist with ID ${playlistId} fetched successfully`
       )
     );
@@ -140,8 +216,7 @@ const addVideoToPlaylist = asyncHandler(async (req, res) => {
     throw new ApiErrors(404, "Video not found");
   }
   if (playlist.allVideos.includes(videoId)) {
-    res.status(400);
-    throw new ApiErrors("Video already in the playlist");
+    throw new ApiErrors(400, "Video already in the playlist");
   }
   playlist.allVideos.push(videoId);
 

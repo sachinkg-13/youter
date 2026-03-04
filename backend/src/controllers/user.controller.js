@@ -267,7 +267,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     };
 
-    const { accessToken, newRefreshToken } =
+    const { accessToken, refreshToken: newRefreshToken } =
       await generateAccessAndRefreshToken(user._id);
 
     return res
@@ -484,7 +484,7 @@ const getWatchHistory = asyncHandler(async (req, res) => {
     {
       $lookup: {
         from: "videos",
-        localField: "watchHistory",
+        localField: "watch",
         foreignField: "_id",
         as: "watchHistory",
         pipeline: [
@@ -507,13 +507,45 @@ const getWatchHistory = asyncHandler(async (req, res) => {
             },
           },
           {
-            //Iss part ko skip v kr skte the , q ki yeh pipeline jo return krega "ownwer" field k aandar wo ek array hoga jis kya hoga ki hm log ko further ek loop lagana hoga ,pr jaise ki hmlog jante h ki hume sirf first value hi milega toh uska firse value hi return kr dete h.
+            $lookup: {
+              from: "likes",
+              localField: "_id",
+              foreignField: "video",
+              as: "likes"
+            }
+          },
+          {
+            $lookup: {
+              from: "comments",
+              localField: "_id",
+              foreignField: "video",
+              as: "comments"
+            }
+          },
+          {
             $addFields: {
               owner: {
                 $first: "$owner",
               },
+              likesCount: { $size: "$likes" },
+              commentsCount: { $size: "$comments" },
+              isLiked: {
+                $cond: {
+                  if: {
+                    $in: [new mongoose.Types.ObjectId(req.user._id), "$likes.isLikedBy"]
+                  },
+                  then: true,
+                  else: false
+                }
+              }
             },
           },
+          {
+            $project: {
+              likes: 0,
+              comments: 0
+            }
+          }
         ],
       },
     },
@@ -530,6 +562,32 @@ const getWatchHistory = asyncHandler(async (req, res) => {
     );
 });
 
+const clearWatchHistory = asyncHandler(async (req, res) => {
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    {
+      $set: {
+        watch: []
+      }
+    },
+    { new: true }
+  ).select("-password -refreshToken");
+
+  if (!user) {
+    throw new ApiErrors(404, "User not found");
+  }
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponses(
+        200,
+        null,
+        "Watch history cleared successfully"
+      )
+    );
+});
+
 export {
   registerUser,
   loginUser,
@@ -542,4 +600,5 @@ export {
   updateCoverImage,
   getUserChannelProfile,
   getWatchHistory,
+  clearWatchHistory,
 };

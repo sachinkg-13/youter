@@ -1,4 +1,4 @@
-import express, { application } from "express";
+import express from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 
@@ -29,7 +29,7 @@ app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/videos", videoRoutes);
 app.use("/api/v1/tweets", tweetRoutes);
 app.use("/api/v1/subscriptions", subscriptionRoutes);
-app.use("/api/v1/playlist", playlistRoutes);
+app.use("/api/v1/playlists", playlistRoutes);
 app.use("/api/v1/like", likeRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
 app.use("/api/v1/comments", commentRoutes);

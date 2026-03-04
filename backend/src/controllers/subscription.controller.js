@@ -56,7 +56,8 @@ const getUserChannelSubscribers = asyncHandler(async (req, res) => {
       "Invalid channel id fetched while getUserChannelSubscribers"
     );
   }
-  const subscribersList = await Subscription.aggregate([
+
+  const subscribersAggregate = await Subscription.aggregate([
     {
       $match: {
         channel: new mongoose.Types.ObjectId(channelId),
@@ -80,8 +81,7 @@ const getUserChannelSubscribers = asyncHandler(async (req, res) => {
     {
       $group: {
         _id: null,
-
-        totalSubscriber: {
+        subscribersCount: {
           $sum: 1,
         },
         userName: {
@@ -94,28 +94,38 @@ const getUserChannelSubscribers = asyncHandler(async (req, res) => {
     },
     {
       $project: {
-        totalSubscriber: 1,
+        _id: 0,
+        subscribersCount: 1,
         userName: 1,
         avatar: 1,
-        channel: 1,
       },
     },
   ]);
-  {
-    console.log("subscriber: " + subscribersList);
+
+  let isSubscribed = false;
+  if (req.user?._id) {
+    const subscription = await Subscription.findOne({
+      channel: channelId,
+      subscriber: req.user._id,
+    });
+    isSubscribed = !!subscription;
   }
-  if (!subscribersList.length === 0) {
-    throw new ApiErrors(404, "No subscribers");
-  }
+
+  const result = subscribersAggregate[0] || {
+    subscribersCount: 0,
+    userName: [],
+    avatar: [],
+  };
+
   return res
-  .status(200)
-  .json(
-    new ApiResponses(
-      201,
-      subscribersList,
-      "Subscriber count fetched successfully"
-    )
-  );
+    .status(200)
+    .json(
+      new ApiResponses(
+        200,
+        { ...result, isSubscribed },
+        "Subscriber count fetched successfully"
+      )
+    );
 });
 
 // controller to return channel list to which user has subscribed
@@ -149,18 +159,18 @@ const getSubscribedChannels = asyncHandler(async (req, res) => {
               avatar: 1,
               email: 1,
               createdAt: 1,
-            }
-          }
-        ]
-      }
+            },
+          },
+        ],
+      },
     },
     {
       $lookup: {
         from: "subscriptions",
         localField: "channel",
         foreignField: "channel",
-        as: "subscriberCount"
-      }
+        as: "subscriberCount",
+      },
     },
     {
       $lookup: {
@@ -170,13 +180,13 @@ const getSubscribedChannels = asyncHandler(async (req, res) => {
         as: "latestVideos",
         pipeline: [
           {
-            $match: { isPublished: true }
+            $match: { isPublished: true },
           },
           {
-            $sort: { createdAt: -1 }
+            $sort: { createdAt: -1 },
           },
           {
-            $limit: 1
+            $limit: 1,
           },
           {
             $project: {
@@ -185,18 +195,18 @@ const getSubscribedChannels = asyncHandler(async (req, res) => {
               thumbnail: 1,
               views: 1,
               createdAt: 1,
-              duration: 1
-            }
-          }
-        ]
-      }
+              duration: 1,
+            },
+          },
+        ],
+      },
     },
     {
       $addFields: {
         channelInfo: { $first: "$channelDetails" },
         subscribersCount: { $size: "$subscriberCount" },
-        latestVideo: { $first: "$latestVideos" }
-      }
+        latestVideo: { $first: "$latestVideos" },
+      },
     },
     {
       $project: {
@@ -209,12 +219,12 @@ const getSubscribedChannels = asyncHandler(async (req, res) => {
         subscribersCount: 1,
         latestVideo: 1,
         subscribedAt: "$createdAt",
-        channelCreatedAt: "$channelInfo.createdAt"
-      }
+        channelCreatedAt: "$channelInfo.createdAt",
+      },
     },
     {
-      $sort: { subscribedAt: -1 }
-    }
+      $sort: { subscribedAt: -1 },
+    },
   ]);
 
   if (!channelSubscribedList || channelSubscribedList.length === 0) {
@@ -229,18 +239,16 @@ const getSubscribedChannels = asyncHandler(async (req, res) => {
       );
   }
 
-  return res
-    .status(200)
-    .json(
-      new ApiResponses(
-        200,
-        {
-          channels: channelSubscribedList,
-          totalSubscriptions: channelSubscribedList.length
-        },
-        "Subscribed channels fetched successfully"
-      )
-    );
+  return res.status(200).json(
+    new ApiResponses(
+      200,
+      {
+        channels: channelSubscribedList,
+        totalSubscriptions: channelSubscribedList.length,
+      },
+      "Subscribed channels fetched successfully"
+    )
+  );
 });
 
 // controller to get suggested users (users not subscribed to)
@@ -250,26 +258,26 @@ const getSuggestedChannels = asyncHandler(async (req, res) => {
 
   // Get channels that the user is already subscribed to
   const subscribedChannels = await Subscription.find({
-    subscriber: userId
-  }).select('channel');
+    subscriber: userId,
+  }).select("channel");
 
-  const subscribedChannelIds = subscribedChannels.map(sub => sub.channel);
+  const subscribedChannelIds = subscribedChannels.map((sub) => sub.channel);
   subscribedChannelIds.push(userId); // Exclude the user themselves
 
   // Get suggested channels (users not subscribed to)
   const suggestedChannels = await User.aggregate([
     {
       $match: {
-        _id: { $nin: subscribedChannelIds }
-      }
+        _id: { $nin: subscribedChannelIds },
+      },
     },
     {
       $lookup: {
         from: "subscriptions",
         localField: "_id",
         foreignField: "channel",
-        as: "subscribers"
-      }
+        as: "subscribers",
+      },
     },
     {
       $lookup: {
@@ -279,23 +287,23 @@ const getSuggestedChannels = asyncHandler(async (req, res) => {
         as: "videos",
         pipeline: [
           {
-            $match: { isPublished: true }
+            $match: { isPublished: true },
           },
           {
-            $sort: { createdAt: -1 }
+            $sort: { createdAt: -1 },
           },
           {
-            $limit: 1
-          }
-        ]
-      }
+            $limit: 1,
+          },
+        ],
+      },
     },
     {
       $addFields: {
         subscribersCount: { $size: "$subscribers" },
         latestVideo: { $first: "$videos" },
-        videosCount: { $size: "$videos" }
-      }
+        videosCount: { $size: "$videos" },
+      },
     },
     {
       $project: {
@@ -310,30 +318,52 @@ const getSuggestedChannels = asyncHandler(async (req, res) => {
           thumbnail: 1,
           views: 1,
           createdAt: 1,
-          duration: 1
+          duration: 1,
         },
         videosCount: 1,
-        createdAt: 1
-      }
+        createdAt: 1,
+      },
     },
     {
-      $sort: { subscribersCount: -1, createdAt: -1 }
+      $sort: { subscribersCount: -1, createdAt: -1 },
     },
     {
-      $limit: parseInt(limit)
-    }
+      $limit: parseInt(limit),
+    },
   ]);
+
+  return res.status(200).json(
+    new ApiResponses(
+      200,
+      {
+        channels: suggestedChannels,
+        totalSuggested: suggestedChannels.length,
+      },
+      "Suggested channels fetched successfully"
+    )
+  );
+});
+
+// controller to check if user is subscribed to a channel
+const checkSubscriptionStatus = asyncHandler(async (req, res) => {
+  const { channelId } = req.params;
+
+  if (!isValidObjectId(channelId)) {
+    throw new ApiErrors(404, "Invalid channel ID");
+  }
+
+  const isSubscribed = await Subscription.findOne({
+    subscriber: req.user._id,
+    channel: channelId,
+  });
 
   return res
     .status(200)
     .json(
       new ApiResponses(
         200,
-        {
-          channels: suggestedChannels,
-          totalSuggested: suggestedChannels.length
-        },
-        "Suggested channels fetched successfully"
+        { isSubscribed: !!isSubscribed },
+        "Subscription status fetched successfully"
       )
     );
 });
@@ -341,12 +371,12 @@ const getSuggestedChannels = asyncHandler(async (req, res) => {
 // controller to get recent content from subscribed channels
 const getSubscribedChannelsContent = asyncHandler(async (req, res) => {
   const userId = req.user._id;
-  const { limit = 20, type = 'all' } = req.query; // type can be 'videos', 'tweets', or 'all'
+  const { limit = 20, type = "all" } = req.query; // type can be 'videos', 'tweets', or 'all'
 
   // Get subscribed channels
   const subscribedChannels = await Subscription.find({
-    subscriber: userId
-  }).select('channel');
+    subscriber: userId,
+  }).select("channel");
 
   if (!subscribedChannels.length) {
     return res
@@ -360,18 +390,18 @@ const getSubscribedChannelsContent = asyncHandler(async (req, res) => {
       );
   }
 
-  const channelIds = subscribedChannels.map(sub => sub.channel);
+  const channelIds = subscribedChannels.map((sub) => sub.channel);
 
   let content = [];
 
-  if (type === 'videos' || type === 'all') {
+  if (type === "videos" || type === "all") {
     // Get recent videos from subscribed channels
-    const videos = await mongoose.model('Video').aggregate([
+    const videos = await mongoose.model("Video").aggregate([
       {
         $match: {
           owner: { $in: channelIds },
-          isPublished: true
-        }
+          isPublished: true,
+        },
       },
       {
         $lookup: {
@@ -384,27 +414,27 @@ const getSubscribedChannelsContent = asyncHandler(async (req, res) => {
               $project: {
                 username: 1,
                 fullName: 1,
-                avatar: 1
-              }
-            }
-          ]
-        }
+                avatar: 1,
+              },
+            },
+          ],
+        },
       },
       {
         $lookup: {
           from: "comments",
           localField: "_id",
           foreignField: "video",
-          as: "comments"
-        }
+          as: "comments",
+        },
       },
       {
         $lookup: {
           from: "likes",
           localField: "_id",
           foreignField: "video",
-          as: "likes"
-        }
+          as: "likes",
+        },
       },
       {
         $addFields: {
@@ -416,35 +446,36 @@ const getSubscribedChannelsContent = asyncHandler(async (req, res) => {
             $cond: {
               if: { $in: [userId, "$likes.isLikedBy"] },
               then: true,
-              else: false
-            }
-          }
-        }
+              else: false,
+            },
+          },
+        },
       },
       {
         $project: {
           comments: 0,
-          likes: 0
-        }
+          likes: 0,
+        },
       },
       {
-        $sort: { createdAt: -1 }
+        $sort: { createdAt: -1 },
       },
       {
-        $limit: type === 'all' ? Math.floor(parseInt(limit) / 2) : parseInt(limit)
-      }
+        $limit:
+          type === "all" ? Math.floor(parseInt(limit) / 2) : parseInt(limit),
+      },
     ]);
 
     content = [...content, ...videos];
   }
 
-  if (type === 'tweets' || type === 'all') {
+  if (type === "tweets" || type === "all") {
     // Get recent tweets from subscribed channels
-    const tweets = await mongoose.model('Tweet').aggregate([
+    const tweets = await mongoose.model("Tweet").aggregate([
       {
         $match: {
-          owner: { $in: channelIds }
-        }
+          owner: { $in: channelIds },
+        },
       },
       {
         $lookup: {
@@ -457,27 +488,27 @@ const getSubscribedChannelsContent = asyncHandler(async (req, res) => {
               $project: {
                 username: 1,
                 fullName: 1,
-                avatar: 1
-              }
-            }
-          ]
-        }
+                avatar: 1,
+              },
+            },
+          ],
+        },
       },
       {
         $lookup: {
           from: "comments",
           localField: "_id",
           foreignField: "tweet",
-          as: "comments"
-        }
+          as: "comments",
+        },
       },
       {
         $lookup: {
           from: "likes",
           localField: "_id",
           foreignField: "tweet",
-          as: "likes"
-        }
+          as: "likes",
+        },
       },
       {
         $addFields: {
@@ -489,23 +520,24 @@ const getSubscribedChannelsContent = asyncHandler(async (req, res) => {
             $cond: {
               if: { $in: [userId, "$likes.isLikedBy"] },
               then: true,
-              else: false
-            }
-          }
-        }
+              else: false,
+            },
+          },
+        },
       },
       {
         $project: {
           comments: 0,
-          likes: 0
-        }
+          likes: 0,
+        },
       },
       {
-        $sort: { createdAt: -1 }
+        $sort: { createdAt: -1 },
       },
       {
-        $limit: type === 'all' ? Math.floor(parseInt(limit) / 2) : parseInt(limit)
-      }
+        $limit:
+          type === "all" ? Math.floor(parseInt(limit) / 2) : parseInt(limit),
+      },
     ]);
 
     content = [...content, ...tweets];
@@ -514,22 +546,27 @@ const getSubscribedChannelsContent = asyncHandler(async (req, res) => {
   // Sort all content by creation date
   content.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-  if (type === 'all') {
+  if (type === "all") {
     content = content.slice(0, parseInt(limit));
   }
 
-  return res
-    .status(200)
-    .json(
-      new ApiResponses(
-        200,
-        {
-          content,
-          totalContent: content.length
-        },
-        "Subscribed channels content fetched successfully"
-      )
-    );
+  return res.status(200).json(
+    new ApiResponses(
+      200,
+      {
+        content,
+        totalContent: content.length,
+      },
+      "Subscribed channels content fetched successfully"
+    )
+  );
 });
 
-export { toggleSubscription, getUserChannelSubscribers, getSubscribedChannels, getSuggestedChannels, getSubscribedChannelsContent };
+export {
+  toggleSubscription,
+  getUserChannelSubscribers,
+  getSubscribedChannels,
+  getSuggestedChannels,
+  getSubscribedChannelsContent,
+  checkSubscriptionStatus,
+};
