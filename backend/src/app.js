@@ -4,12 +4,33 @@ import cors from "cors";
 
 const app = express();
 
-app.use(
-  cors({
-    origin: process.env.CORS_ORIGIN,
-    credentials: true,
-  })
-);
+// CORS configuration for production
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    const allowedOrigins = [
+      process.env.CORS_ORIGIN,
+      "https://youter-frontend.vercel.app",
+      "http://localhost:3000",
+      "http://localhost:5173"
+    ].filter(Boolean);
+    
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
+
+// Handle preflight requests
+app.options("*", cors(corsOptions));
 app.use(express.json({ limit: "16kb" })); //Limits the json FILE storage
 app.use(express.urlencoded({ extended: true, limit: "16kb" })); //Limits the URL ENCODED data storage
 app.use(express.static("public")); //
