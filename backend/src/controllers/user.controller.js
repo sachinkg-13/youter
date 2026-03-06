@@ -6,6 +6,14 @@ import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponses } from "../utils/ApiResponses.js";
 import jwt from "jsonwebtoken";
 
+// Cookie options for cross-origin requests (frontend on different domain)
+const getCookieOptions = (withMaxAge = true) => ({
+  httpOnly: true,
+  secure: true, // Required for cross-origin cookies (SameSite=None requires Secure)
+  sameSite: 'none', // Required for cross-origin requests
+  ...(withMaxAge && { maxAge: 24 * 60 * 60 * 1000 }), // 24 hours
+});
+
 const generateAccessAndRefreshToken = async (userID) => {
   try {
     const user = await User.findById(userID);
@@ -125,12 +133,7 @@ const registerUser = asyncHandler(async (req, res) => {
     createdUser._id
   );
 
-  const options = {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // Only secure in production
-    sameSite: 'lax', // Allow cross-site requests
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-  };
+  const options = getCookieOptions();
 
   return res
     .status(201)
@@ -189,12 +192,7 @@ const loginUser = asyncHandler(async (req, res) => {
     "-password, -refreshToken"
   );
 
-  const options = {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // Only secure in production
-    sameSite: 'lax', // Allow cross-site requests
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-  };
+  const options = getCookieOptions();
   return res
     .status(200)
     .cookie("accessToken", accessToken, options)
@@ -224,11 +222,7 @@ const logoutUser = asyncHandler(async (req, res) => {
       new: true,
     }
   );
-  const options = {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // Only secure in production
-    sameSite: 'lax', // Allow cross-site requests
-  };
+  const options = getCookieOptions(false); // No maxAge needed for clearing
   return res
     .status(200)
     .clearCookie("accessToken", options)
@@ -260,12 +254,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
       throw new ApiErrors(401, "Refresh token is expired or used");
     }
 
-    const options = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // Only secure in production
-      sameSite: 'lax', // Allow cross-site requests
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    };
+    const options = getCookieOptions();
 
     const { accessToken, refreshToken: newRefreshToken } =
       await generateAccessAndRefreshToken(user._id);
